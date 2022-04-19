@@ -1,1 +1,203 @@
+########################################################################################################################
+#  Any code, applications, scripts, templates, proofs of concept, documentation and other items provided by AWS under  #
+#  this SOW are "AWS Content," as defined in the Agreement, and are provided for illustration purposes only. All such  #
+#  AWS Content is provided solely at the option of AWS, and is subject to the terms of the Addendum and the Agreement. #
+#  Customer is solely responsible for using, deploying, testing, and supporting any code and applications provided by  #
+#  AWS under this SOW.                                                                                                 #
+########################################################################################################################
+# Copyright 2016-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# 
+# Licensed under the Apache License, Version 2.0 (the "License"). You may not use this file except in compliance with the License. A copy of the License is located at
+# 
+# http://aws.amazon.com/apache2.0/
+# 
+# or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
 
+Parameters:
+  orgId:
+    Description: Id of organization
+    Type: String
+  S3bucketforLambda:
+    Type: String
+    Description: S3 bucket containing Zip file for Lambda function
+    Default: control-tower-storage-257999423055-us-east-2
+  S3KeyforLambda:
+    Type: String
+    Description: Key for the Zip file in S3 bucket
+    Default: Networking/lambda-for-vpc-subnets-automation.zip
+  LocalParameterPathforVPCID:
+    Type: String
+    Description: SSM Parameter Name for storing VPCID locally in the account
+    Default: '/org/member/local/vpcid'
+
+Resources:
+  # Create Dynamo table to keep records of used VPC subnets
+  # The lambda function needs read-only access to EC2
+  InvokeLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Sid: InvokeLambda 
+              Effect: Allow
+              Action:
+              - lambda:InvokeFunction
+              - lambda:InvokeAsync 
+              Resource: !GetAtt Function.Arn
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Principal:
+            AWS: "*"
+          Action: 
+          - "sts:AssumeRole"
+          Condition:
+            StringEquals:
+              aws:PrincipalOrgID: !Ref orgId
+        - Effect: Allow
+          Principal:
+            AWS: "*"
+          Action: 
+          - "sts:AssumeRole"
+          Condition:
+            StringEquals:
+              aws:PrincipalOrgID: o-djj856740i #(orgId 2)
+
+  DynamoDbFullAccessfororganizationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: DynamoDB-FullAccess-For-Organization
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Principal:
+            AWS: "*"
+          Action: 
+          - "sts:AssumeRole"
+          Condition:
+            StringEquals:
+              aws:PrincipalOrgID: !Ref orgId
+        - Effect: Allow
+          Principal:
+            AWS: "*"
+          Action: 
+          - "sts:AssumeRole"
+          Condition:
+            StringEquals:
+              aws:PrincipalOrgID: o-djj856740i #(orgId 2)
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess
+
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Sid: S3Get
+              Effect: Allow
+              Action:
+              - s3:PutObject
+              - s3:GetObject 
+              Resource: "*"
+            - Sid: Cw
+              Effect: Allow
+              Action:
+              - cloudwatch:PutMetricData
+              Resource: "*"
+            - Sid: ListAndDescribe
+              Effect: Allow
+              Action:
+              - dynamodb:List*
+              - dynamodb:DescribeReservedCapacity*
+              - dynamodb:DescribeLimits
+              - dynamodb:DescribeTimeToLive
+              Resource: "*"
+            - Sid: SpecificTable
+              Effect: Allow
+              Action:
+              - dynamodb:BatchGet*
+              - dynamodb:DescribeStream
+              - dynamodb:DescribeTable
+              - dynamodb:Get*
+              - dynamodb:Query
+              - dynamodb:Scan
+              - dynamodb:BatchWrite*
+              - dynamodb:CreateTable
+              - dynamodb:Delete*
+              - dynamodb:Update*
+              - dynamodb:PutItem
+              Resource: 
+                !Join
+                  - ''
+                  - - !GetAtt SubnetsTableDynamo.Arn
+                    - '*'
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action: 
+          - "sts:AssumeRole"
+
+  # Create the lambda function from the code stored in the bucket specified in params 
+  Function:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: !Ref S3bucketforLambda
+        S3Key: !Ref S3KeyforLambda
+      Handler: lambda_handler.handler
+      Role: !GetAtt Role.Arn
+      Runtime: python3.6
+      Timeout: 300
+      MemorySize: 256
+      Environment:
+        Variables:
+          tableName: !Ref SubnetsTableDynamo
+          publishMetrics: "yes"
+
+  SubnetsTableDynamo: 
+    Type: AWS::DynamoDB::Table
+    Properties: 
+      AttributeDefinitions: 
+        - 
+          AttributeName: "id"
+          AttributeType: "S"
+        - 
+          AttributeName: "region"
+          AttributeType: "S"
+      KeySchema: 
+        - 
+          AttributeName: "id"
+          KeyType: "HASH"
+        - 
+          AttributeName: "region"
+          KeyType: "RANGE"
+      ProvisionedThroughput: 
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+Outputs:
+  oInvokeLambdaRoleArn:
+    Value: !GetAtt InvokeLambdaRole.Arn
+  oFunctionArn:
+    Value: !GetAtt Function.Arn
+  oLocalParameterPathforVPCID:
+    Value: !Ref LocalParameterPathforVPCID
+  oDynamoDBTableName:
+    Value: !Ref SubnetsTableDynamo
+  oDynamoDbFullAccessfororganizationRole:
+    Value: !GetAtt DynamoDbFullAccessfororganizationRole.Arn
