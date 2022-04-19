@@ -1,0 +1,222 @@
+########################################################################################################################
+#  Any code, applications, scripts, templates, proofs of concept, documentation and other items provided by AWS under  #
+#  this SOW are "AWS Content," as defined in the Agreement, and are provided for illustration purposes only. All such  #
+#  AWS Content is provided solely at the option of AWS, and is subject to the terms of the Addendum and the Agreement. #
+#  Customer is solely responsible for using, deploying, testing, and supporting any code and applications provided by  #
+#  AWS under this SOW.                                                                                                 #
+########################################################################################################################
+# Copyright 2016-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# 
+# Licensed under the Apache License, Version 2.0 (the "License"). You may not use this file except in compliance with the License. A copy of the License is located at
+# 
+# http://aws.amazon.com/apache2.0/
+# 
+# or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+
+Description: "This template creates a Lambda function which populates the DynamoDB Table with available VPC CIDR Ranges"
+
+Parameters:
+  tableName:
+    Description: Name of the DynamoDB table maintaining the CIDR Ranges
+    Type: String
+  NetworkHubAccountId:
+    Description: NetworkHub Account Number containing the DynamoDb table
+    Type: String
+
+Resources:
+  IPAMAutomationExistingVPCsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Policies:
+        - PolicyName: DynamoDB-FullAccess-Policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Sid: DescribeVpcs
+              Effect: Allow
+              Action:
+              - ec2:DescribeVpcs
+              Resource: "*"
+            - Sid: Assumerole
+              Effect: Allow
+              Action: 
+              - "sts:AssumeRole"
+              Resource: !Sub "arn:aws:iam::${NetworkHubAccountId}:role/DynamoDB-FullAccess-For-Organization"
+
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action: 
+          - "sts:AssumeRole"
+
+  IPAMAutomationExistingVPCs:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: IPAM Lambda for integrating existing accounts and VPCs
+      FunctionName: IPAM-Automation-Existing-VPCs
+      Handler: "index.lambda_handler"
+      MemorySize: 128
+      Timeout: 300
+      Role: !GetAtt "IPAMAutomationExistingVPCsRole.Arn"
+      Runtime: python3.8
+      Environment:
+        Variables:
+          tableName:
+            Ref: tableName  
+          NetworkHubAccountId:
+            Ref: NetworkHubAccountId    
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import os
+          import uuid
+          import urllib3
+          import re
+          import logging, sys, traceback
+
+          logger = logging.getLogger()
+          logger.setLevel(logging.INFO)
+
+          from boto3.dynamodb.conditions import Key, Attr
+
+          http = urllib3.PoolManager()
+          from botocore.exceptions import ClientError
+          from urllib.parse import unquote
+
+          sts_client = boto3.client('sts')
+
+          SUCCESS = "SUCCESS"
+          FAILED = "FAILED"
+          def sendResponse(event, context, responseStatus, responseData, reason=None, physical_resource_id=None):
+              responseBody = {'Status': responseStatus,
+                              'Reason': 'See the details in CloudWatch Log Stream: ' + context.log_stream_name,
+                              'PhysicalResourceId': physical_resource_id or context.log_stream_name,
+                              'StackId': event['StackId'],
+                              'RequestId': event['RequestId'],
+                              'LogicalResourceId': event['LogicalResourceId'],
+                              'Data': responseData}
+              print ('RESPONSE BODY:n' + json.dumps(responseBody))
+              responseUrl = event['ResponseURL']
+              json_responseBody = json.dumps(responseBody)
+              headers = {
+                  'content-type' : '',
+                  'content-length' : str(len(json_responseBody))
+              }
+              try:
+                  response = http.request('PUT', responseUrl, headers=headers, body=json_responseBody)
+                  #response = response.send(responseUrl, data=json_responseBody, headers=headers)
+                  print ("Status code: " +response.reason)
+              except Exception as e:
+                  print ("send(..) failed executing requests.put(..): " + str(e))
+                  
+          def lambda_handler(event, context):
+              ec2_client  = boto3.client('ec2')
+              table_name  = os.environ['tableName']
+              networkhub_account_id  = os.environ['NetworkHubAccountId']
+              runtimeSession = boto3.session.Session()
+              rolearn = 'arn:aws:iam::networkhubid:role/DynamoDB-FullAccess-For-Organization'
+              role_arn = rolearn.replace("networkhubid", networkhub_account_id)
+              sts_session = sts_client.assume_role(RoleArn= role_arn,
+                                                RoleSessionName='test-dynamodb-session')
+
+              KEY_ID = sts_session['Credentials']['AccessKeyId']
+              ACCESS_KEY = sts_session['Credentials']['SecretAccessKey']
+              TOKEN = sts_session['Credentials']['SessionToken']
+
+              dynamodb    = boto3.resource('dynamodb',                                
+                                aws_access_key_id=KEY_ID,
+                                aws_secret_access_key=ACCESS_KEY,
+                                aws_session_token=TOKEN)
+                                
+              request_region = runtimeSession.region_name
+              responseData = {}
+              print(request_region)
+              
+              if event['RequestType'] == 'Delete':
+                  logger.info("Received a Delete Request...")
+                  responseStatus = "SUCCESS"
+                  responseData = {}
+              elif event['RequestType'] == 'Create':
+                  logger.info("Received a Create Request...")
+                  responseStatus = "SUCCESS"
+              elif event['RequestType'] == 'Update':
+                  logger.info("Received a Update Request...")
+                  logger.info("Fetching Latest CloudFormation Exports")
+                  responseStatus = "SUCCESS"
+
+              try:
+                  response = ec2_client.describe_vpcs(
+                  Filters=[
+                      {
+                          'Name': 'state', 
+                          'Values': ['available']
+                      },
+                      ]
+                      )
+                  for iter in response.get('Vpcs'):
+                      CidrBlockAssociationSet = iter.get('CidrBlockAssociationSet')
+                      route_owner = iter.get('OwnerId')
+                      print(route_owner)
+                      # print(CidrBlockAssociationSet)
+                      for vpc_cidr in range(len(CidrBlockAssociationSet)):
+                          route_cidr = CidrBlockAssociationSet[vpc_cidr]['CidrBlock'].split('/')[1]
+                          route_network = CidrBlockAssociationSet[vpc_cidr]['CidrBlock'].split('/')[0]
+                          print('route_cidr:', route_cidr)
+                          print('route_network:', route_network)
+                          
+                          table = dynamodb.Table(table_name)
+                          table_response = table.scan(FilterExpression=Key('region').eq(request_region) & Key('cidr_subnet').eq(int(route_cidr)) & Key('cidr_prefix').eq(route_network))
+                          if table_response.get('Count') == 0:
+                              print (table_response.get('Count'))
+                              response_table = table.put_item(
+                                  Item={
+                                          'id': str(uuid.uuid4()),
+                                          'region': request_region,
+                                          'account_id': int(route_owner),
+                                          'cidr_subnet': int(route_cidr),
+                                          'cidr_prefix': route_network,
+                                          'env':  "NONE"
+                                      }
+                                  )
+                          elif table_response.get('Count') == 1:
+                              if table_response.get('Items')[0].get('account_id') == 0:
+                                  update_response = table.update_item(
+                                      Key={
+                                          'id': table_response.get('Items')[0].get('id'),
+                                          'region': table_response.get('Items')[0].get('region')
+                                      },
+                                      UpdateExpression="set account_id = :a REMOVE stack_id",
+                                      ExpressionAttributeValues={
+                                          ':a': int(route_owner)
+                                      },
+                                      ReturnValues="UPDATED_NEW"
+                                  )
+                              elif table_response.get('Items')[0].get('account_id') != int(route_owner):
+                                  logger.info('Conflict in the CIDRs')
+                  responseData = {}
+                  responseStatus = "SUCCESS"
+                  sendResponse(event, context, responseStatus, responseData)
+              except Exception as exp:
+                  responseStatus = "FAILED"
+                  exception_type, exception_value, exception_traceback = sys.exc_info()
+                  traceback_string = traceback.format_exception(exception_type, exception_value, exception_traceback)
+                  err_msg = json.dumps({
+                      "errorType": exception_type.__name__,
+                      "errorMessage": str(exception_value),
+                      "stackTrace": traceback_string
+                  })
+                  logger.error(err_msg)
+                  sendResponse(event, context, responseStatus, responseData)
+                  
+
+  ExistingVPCsAutomationInvoke:
+    Type: Custom::ExistingVPCsAutomationInvoke
+    Properties:
+      ServiceToken: !GetAtt IPAMAutomationExistingVPCs.Arn
