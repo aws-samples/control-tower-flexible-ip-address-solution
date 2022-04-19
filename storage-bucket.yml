@@ -1,0 +1,100 @@
+########################################################################################################################
+#  Any code, applications, scripts, templates, proofs of concept, documentation and other items provided by AWS under  #
+#  this SOW are "AWS Content," as defined in the Agreement, and are provided for illustration purposes only. All such  #
+#  AWS Content is provided solely at the option of AWS, and is subject to the terms of the Addendum and the Agreement. #
+#  Customer is solely responsible for using, deploying, testing, and supporting any code and applications provided by  #
+#  AWS under this SOW.                                                                                                 #
+########################################################################################################################
+
+AWSTemplateFormatVersion: 2010-09-09
+Description: Create a S3 storage bucket in the audit account.
+
+Parameters:
+  OrganizationId:
+    Type: 'String'
+    Description: ID of the AWS Organization of the Landing Zone
+  SSEAlgorithm:
+    Type: 'String'
+    Default: 'AES256'
+    Description: S3 bucket SSE Algorithm.
+
+Resources:
+
+  # Create buckets using S3-SSE keys for default encryption
+  S3UploadBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub control-tower-storage-${AWS::AccountId}-${AWS::Region}
+      LoggingConfiguration:
+        DestinationBucketName: !Ref UploadBucketS3AccessLogsBucket
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: !Ref SSEAlgorithm
+
+  S3UploadBucketPolicy:
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: F16
+            reason: "We can allow * for the Principal as we are limiting access to the Org."
+    #It goes at the same level as Type: and Properties:, so directly under your resource.
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3UploadBucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: AllowOrganizationRead
+            Effect: Allow
+            Principal: "*"
+            Action: 
+              - s3:GetObject
+            Resource:
+              - !Sub "arn:aws:s3:::${S3UploadBucket}/*"
+            Condition: 
+              StringEquals:
+                aws:PrincipalOrgID: !Ref OrganizationId
+
+  # Create buckets using S3-SSE keys for default encryption
+  UploadBucketS3AccessLogsBucket:
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Type: AWS::S3::Bucket
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W35
+            reason: "This S3 bucket is used as the destination for 'S3UploadBucket'"
+    Properties:
+      AccessControl: LogDeliveryWrite
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+
+  UploadBucketS3AccessLogsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref UploadBucketS3AccessLogsBucket
+      PolicyDocument:
+        Statement:
+          - Sid: DenyDeleteBucket
+            Effect: Deny
+            Principal: "*"
+            Action: s3:DeleteBucket
+            Resource: !Sub arn:${AWS::Partition}:s3:::${UploadBucketS3AccessLogsBucket}
+
+Outputs:
+  oBucketName:
+    Description: AWS Control Tower Upload bucket name
+    Value: !Ref S3UploadBucket
