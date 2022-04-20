@@ -1,1 +1,279 @@
+########################################################################################################################
+#  Any code, applications, scripts, templates, proofs of concept, documentation and other items provided by AWS under  #
+#  this SOW are "AWS Content," as defined in the Agreement, and are provided for illustration purposes only. All such  #
+#  AWS Content is provided solely at the option of AWS, and is subject to the terms of the Addendum and the Agreement. #
+#  Customer is solely responsible for using, deploying, testing, and supporting any code and applications provided by  #
+#  AWS under this SOW.                                                                                                 #
+########################################################################################################################
+# (c) 2019 Amazon Web Services, Inc. or its affiliates. All Rights Reserved. This AWS Content is provided subject to the terms of the AWS Customer
+# Agreement available at https://aws.amazon.com/agreement/ or other written agreement between Customer and Amazon Web Services, Inc.
+AWSTemplateFormatVersion: '2010-09-09'
+Metadata: # Metadata Section
+  AWS::CloudFormation::Interface:
+    ParameterGroups: # Parameter Groups
+    - Label: # Lambda Configuration
+        default: Configuration
+      Parameters: # Label Parameters
+      - pRoleLambdaFunctionArn
+      - pSubnetLambdaFunctionArn
+      - pSubnetsCount
+      - pSmallSubnetMask
+      - pMediumSubnetMask
+      - pLargeSubnetMask
+      - pSmallVpcSize
+      - pMediumVpcSize
+      - pLargeVpcSize
+      - pEnv
+Parameters:
+  orgId:
+    Description: Id of organization
+    Type: String
+  LocalParameterPathforVPCID:
+    Type: String
+    Description: SSM Parameter Name for storing VPCID locally in the account
+    Default: '/org/member/local/vpcid'
+  pSubnetLambdaFunctionArn:
+    Description: Arn for lambda to generate VPC subnet
+    Type: String
+  pRoleLambdaFunctionArn:
+    Description: Arn for lambda to assume role in Network account
+    Type: String
+  pEnv:
+    Description:  Name of Environment for account
+    Type: String
+  pSubnetsCount:
+    Description: Number or subnets to create
+    Type: Number
+    Default: 3
+  pSmallSubnetMask:
+    Description: Small Subnet CIDR between 16-28 
+    Type: String
+    Default: 28
+    # MinValue: 16
+    # MaxValue: 28
+  pSmallVpcSize:
+    Description: Small VPC CIDR
+    Type: Number
+    MinValue: 16
+    MaxValue: 28
+    Default: 26
+  pMediumSubnetMask:
+    Description: Medium Subnet CIDR between 16-28 
+    Type: Number
+    MinValue: 16
+    MaxValue: 28
+    Default: 26
+  pMediumVpcSize:
+    Description: Medium VPC CIDR
+    Type: Number
+    MinValue: 16
+    MaxValue: 28
+    Default: 24
+  pLargeSubnetMask:
+    Description: Large Subnet CIDR between 16-28 
+    Type: Number
+    MinValue: 16
+    MaxValue: 28
+    Default: 25
+  pLargeVpcSize:
+    Description: Large VPC CIDR
+    Type: Number
+    MinValue: 16
+    MaxValue: 28
+    Default: 23
+  pTShirtSize:
+    Description: Account TShirt Size 
+    Type: String
+    Default: small
 
+Mappings:
+  TShirtSizeMap:
+    small: 
+      SubnetMask: 28
+      VpcSize: 26
+    medium:
+      SubnetMask: 26
+      VpcSize: 24
+    large:
+      SubnetMask: 25
+      VpcSize: 23
+
+Resources:
+  rCidrFindrLambdaRole: # Creates the Lambda role that will update the route CFN template and update the stack
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: RouteTableCFNTemplateUpdate
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource: !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:*
+          - Effect: Allow
+            Action:
+            - iam:ListRoles
+            Resource: "*"
+          - Effect: Allow
+            Action:
+            - sts:AssumeRole
+            Resource: !Ref pRoleLambdaFunctionArn
+
+  rCidrFindrLambdaFunction:
+    Type: AWS::Lambda::Function
+    DependsOn:
+      - rCidrFindrLambdaRole
+    Properties:
+      Role: !GetAtt rCidrFindrLambdaRole.Arn
+      Description: Invoking the CIDR finder function in the NetworkHub Account
+      Handler: index.lambda_handler
+      Timeout: 120
+      Environment:
+        Variables:
+          invoke_function_arn: !Ref pSubnetLambdaFunctionArn
+          assume_role_arn: !Ref pRoleLambdaFunctionArn
+      Runtime: python3.9
+      Tags:
+      - Key: Name
+        Value: 'VPC-Subnet-Generator'
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          from urllib.request import urlopen, Request, HTTPError, URLError
+
+          def lambda_handler(event, context):
+              try:
+                  assume_role_arn = os.environ.get("assume_role_arn")
+                  invoke_function_arn = os.environ.get("invoke_function_arn")
+
+                  sts_client = boto3.client('sts')
+
+                  assumed_role_object=sts_client.assume_role(
+                      RoleArn=assume_role_arn,
+                      RoleSessionName="AssumeRoleSession1"
+                  )
+
+                  credentials=assumed_role_object.get('Credentials')
+                  event['invocation_type'] = 'sync'
+
+                  lambda_resource=boto3.client(
+                      'lambda',
+                      aws_access_key_id=credentials.get('AccessKeyId'),
+                      aws_secret_access_key=credentials.get('SecretAccessKey'),
+                      aws_session_token=credentials.get('SessionToken'),
+                  )
+
+                  response = lambda_resource.invoke(
+                      FunctionName=invoke_function_arn,
+                      InvocationType='RequestResponse',
+                      LogType='Tail',
+                      Payload=json.dumps(event)
+                  )
+                  print(response.get('StatusCode'))
+
+                  if response.get('FunctionError'):
+                    print(response.get('FunctionError'))
+                    FunctionError = response.get('FunctionError')
+                  if response.get('LogResult'):
+                    print(response.get('LogResult'))
+
+                  if response.get('FunctionError'):
+                    raise Exception("Failed executing lambda request for data: " + FunctionError)
+              except Exception as e:
+                body = {
+                  "Status": "FAILED",
+                  "PhysicalResourceId": context.log_stream_name,
+                  "StackId": event.get("StackId"),
+                  "RequestId": event.get("RequestId"),
+                  "LogicalResourceId": event.get("LogicalResourceId"),
+                  "Reason": str(e)
+                }
+
+                body_bytes = json.dumps(body).encode("utf-8")
+
+                req = Request(event.get("ResponseURL"), data=body_bytes, headers={
+                  "Content-Length": len(body_bytes),
+                  "Content-Type": "",
+                })
+                req.get_method = lambda: "PUT"
+                urlopen(req)
+                raise Exception("Failed executing: " + str(e))
+
+  CidrFindr:
+    Type: Custom::CidrFindr
+    DependsOn:
+      - rCidrFindrLambdaFunction
+    Properties:
+      ServiceToken: !GetAtt rCidrFindrLambdaFunction.Arn
+      SubnetMask: !FindInMap [TShirtSizeMap, !Ref pTShirtSize, SubnetMask]
+      SubnetsCount: !Ref pSubnetsCount
+      VpcSize:  !FindInMap [TShirtSizeMap, !Ref pTShirtSize, VpcSize]
+      AccountId: !Ref "AWS::AccountId"
+      Region: !Ref "AWS::Region"
+      Env: !Ref pEnv
+      TShirtSize: !Ref pTShirtSize
+      OrgId: !Ref orgId
+
+  # Create a new VPC for the example
+  rVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !GetAtt CidrFindr.VpcCidr
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+
+  Subnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref rVpc
+      AvailabilityZone: 
+        Fn::Select: 
+          - 0
+          - Fn::GetAZs: ""
+      CidrBlock: !GetAtt CidrFindr.Subnet1
+      
+  Subnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref rVpc
+      AvailabilityZone: 
+        Fn::Select: 
+          - 1
+          - Fn::GetAZs: ""
+      CidrBlock: !GetAtt CidrFindr.Subnet2
+
+  Subnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref rVpc
+      AvailabilityZone: 
+        Fn::Select: 
+          - 2
+          - Fn::GetAZs: ""
+      CidrBlock: !GetAtt CidrFindr.Subnet3     
+
+  rVpcIdSSMParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      Name: !Ref LocalParameterPathforVPCID
+      Type: String
+      Value: !Ref rVpc
+
+Outputs:
+  ovpcid:
+    Value: !Ref rVpc
