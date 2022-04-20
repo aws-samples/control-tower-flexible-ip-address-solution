@@ -1,1 +1,54 @@
-
+[
+  {
+  "ParameterKey": "orgId",
+  "ParameterValue": "$[alfred_ssm_/org/core/OrganizationID]"
+  },
+  {
+  "ParameterKey": "DynamoDBTable",
+  "ParameterValue": "Add the Parameter Store Value from Central Management Account for /org/sharedservice/networking/DynamoDBforVPCCIDR"
+  },
+  {
+  "ParameterKey": "DynamoDB-FullAccess-For-OrganizationRole",
+  "ParameterValue": "Add he DynamoDB-FullAccess-For-Organization IAM Role Arn from the Cenral Network Hub Account"
+  },
+  {
+  "ParameterKey": "DynamoDBOwnerAccountID",
+  "ParameterValue": "Add the Account ID where the DynamoDB Table is present i.e., Cenral Network Hub Account"
+  },
+  {
+  "ParameterKey": "S3BucketforCode",
+  "ParameterValue": "AddyourS3bucketnamehere"
+  },
+  {
+  "ParameterKey": "S3KeyforCode",
+  "ParameterValue": "Networking/ip-populator.zip"
+  },
+  {
+  "ParameterKey": "SmallCIDRRange",
+  "ParameterValue": "10.85.64.0/19"
+  },
+  {
+  "ParameterKey": "MediumCIDRRange",
+  "ParameterValue": "10.85.96.0/19"
+  },
+  {
+  "ParameterKey": "LargeCIDRRange",
+  "ParameterValue": "10.85.0.0/18"
+  },
+  {
+  "ParameterKey": "SmallVPCSubnetMask",
+  "ParameterValue": "26"
+  },
+  {
+  "ParameterKey": "MediumVPCSubnetMask",
+  "ParameterValue": "24"
+  },
+  {
+  "ParameterKey": "LargeVPCSubnetMask",
+  "ParameterValue": "23"
+  },
+  {
+  "ParameterKey": "Environment",
+  "ParameterValue": "dev"
+  }
+]
