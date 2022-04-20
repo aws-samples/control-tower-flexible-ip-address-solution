@@ -18,6 +18,12 @@ Step 3 - Provision a spoke account, and enroll to the required OU (e.g., Develop
 
 Step 4 - Validate the VPC creation in the spoke account.
 
+## Authors
+
+Shiva Vaidyanathan - Senior Cloud Infrastructure Architect - vaidys@amazon.com
+
+Mokshith Kumar - Cloud Infrastructure Architect - tumallap@amazon.com
+
 ## Security
 
 See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
