@@ -1,1 +1,133 @@
+########################################################################################################################
+#  Any code, applications, scripts, templates, proofs of concept, documentation and other items provided by AWS under  #
+#  this SOW are "AWS Content," as defined in the Agreement, and are provided for illustration purposes only. All such  #
+#  AWS Content is provided solely at the option of AWS, and is subject to the terms of the Addendum and the Agreement. #
+#  Customer is solely responsible for using, deploying, testing, and supporting any code and applications provided by  #
+#  AWS under this SOW.                                                                                                 #
+########################################################################################################################
+# Copyright 2016-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# 
+# Licensed under the Apache License, Version 2.0 (the "License"). You may not use this file except in compliance with the License. A copy of the License is located at
+# 
+# http://aws.amazon.com/apache2.0/
+# 
+# or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+
+Description: "This template creates a Lambda function which populates the DynamoDB Table with available VPC CIDR Ranges"
+
+Parameters:
+  orgId:
+    Description: Id of organization
+    Type: String
+  DynamoDBTable:
+    Description: Name of the DynamoDB table maintaining the CIDR Ranges
+    Type: String
+  S3BucketforCode:
+    Description: S3 buckey containing the Zip file for Lambda code
+    Type: String
+  S3KeyforCode:
+    Description: Key for the zip file in S3 bucket
+    Type: String
+    Default: Networking/ip-populator.zip
+  SmallCIDRRange:
+    Description: Available CIDR Range to be used # example: 10.95.64.0/19 (This range will be split into VPC ranges based on VPC size required)
+    Type: String
+    Default: 10.85.64.0/19
+  MediumCIDRRange:
+    Description: Available CIDR Range to be used # example: 10.95.96.0/19 (This range will be split into VPC ranges based on VPC size required)
+    Type: String
+    Default: 10.85.96.0/19
+  LargeCIDRRange:
+    Description: Available CIDR Range to be used # example: 10.95.0.0/18 (This range will be split into VPC ranges based on VPC size required)
+    Type: String
+    Default: 10.85.0.0/18
+  SmallVPCSubnetMask:
+    Description: The subnet mask to be used by VPCs in the Landing Zone (number between 16 - 28)
+    Type: String
+    Default: 26
+    AllowedPattern: ^([1][6-9]|[2][0-8])$
+  MediumVPCSubnetMask:
+    Description: The subnet mask to be used by VPCs in the Landing Zone (number between 16 - 28)
+    Type: String
+    Default: 24
+    AllowedPattern: ^([1][6-9]|[2][0-8])$
+  LargeVPCSubnetMask:
+    Description: The subnet mask to be used by VPCs in the Landing Zone (number between 16 - 28)
+    Type: String
+    Default: 23
+    AllowedPattern: ^([1][6-9]|[2][0-8])$
+  Environment:
+    Description: Environment for the CIDR Ranges
+    Type: String
+    AllowedValues:
+      - dev
+      - nonprod
+      - prod
+  DynamoDBFullAccessForOrganizationRole:
+    Description: The DynamoDB-FullAccess-For-Organization IAM Role Arn from the Cenral Network Hub Account
+    Type: String
+  DynamoDBOwnerAccountID:
+    Description: Account ID where the DynamoDB Table is present
+    Type: String
+    Default: 123456789012
+
+Resources:
+
+  IPPopulatorLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+            - Sid: AssumeroleDynamoDBFullAccessPolicy
+              Effect: Allow
+              Action: 
+              - "sts:AssumeRole"
+              Resource: !Ref DynamoDBFullAccessForOrganizationRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action: 
+          - "sts:AssumeRole"
+
+
+  IPPopulatorFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        S3Bucket: !Ref S3BucketforCode
+        S3Key: !Ref S3KeyforCode
+      Environment:
+        Variables:
+          DynamoTable: !Ref DynamoDBTable
+          DynamoDBFullAccessForOrganizationRole: !Ref DynamoDBFullAccessForOrganizationRole
+      Handler: "ippopulator.lambda_handler"
+      MemorySize: 128
+      Role: !GetAtt "IPPopulatorLambdaRole.Arn"
+      Runtime: "python3.8"
+      Timeout: 60
+
+  IPPopulator:
+    Type: Custom::IPPopulator
+    DependsOn:
+      - IPPopulatorFunction
+    Properties:
+      ServiceToken: !GetAtt IPPopulatorFunction.Arn
+      SmallCIDR: !Ref SmallCIDRRange
+      MediumCIDR: !Ref MediumCIDRRange
+      LargeCIDR: !Ref LargeCIDRRange
+      SmallVpcSize: !Ref SmallVPCSubnetMask
+      MediumVpcSize: !Ref MediumVPCSubnetMask
+      LargeVpcSize: !Ref LargeVPCSubnetMask
+      Region: !Ref "AWS::Region"
+      Env: !Ref Environment
+      OrgId: !Ref orgId
 
