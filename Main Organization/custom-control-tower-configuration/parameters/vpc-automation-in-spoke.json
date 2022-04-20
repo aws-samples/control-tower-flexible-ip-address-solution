@@ -1,1 +1,58 @@
-
+[
+  {
+  "ParameterKey": "orgId",
+  "ParameterValue": "$[alfred_ssm_/org/core/OrganizationID]"
+  },
+  {
+  "ParameterKey": "LocalParameterPathforVPCID",
+  "ParameterValue": "$[alfred_ssm_/org/sharedservice/networking/LocalVPCIdPath]"
+  },
+  {
+  "ParameterKey": "pSubnetLambdaFunctionArn",
+  "ParameterValue": "$[alfred_ssm_/org/sharedservice/networking/FunctionArn]"
+  },
+  {
+  "ParameterKey": "pRoleLambdaFunctionArn",
+  "ParameterValue": "$[alfred_ssm_/org/sharedservice/networking/InvokeLambdaRoleArn]"
+  },
+  {
+  "ParameterKey": "pEnv",
+  "ParameterValue": "dev"
+  },
+  {
+  "ParameterKey": "pEnv",
+  "ParameterValue": "dev"
+  },
+  {
+  "ParameterKey": "pSubnetsCount",
+  "ParameterValue": "3"
+  },
+  {
+  "ParameterKey": "pSmallSubnetMask",
+  "ParameterValue": "28"
+  },
+  {
+  "ParameterKey": "pSmallVpcSize",
+  "ParameterValue": "26"
+  },
+  {
+  "ParameterKey": "pMediumSubnetMask",
+  "ParameterValue": "26"
+  },
+  {
+  "ParameterKey": "pMediumVpcSize",
+  "ParameterValue": "24"
+  },
+  {
+  "ParameterKey": "pLargeSubnetMask",
+  "ParameterValue": "25"
+  },
+  {
+  "ParameterKey": "pLargeVpcSize",
+  "ParameterValue": "23"
+  },
+  {
+  "ParameterKey": "pTShirtSize",
+  "ParameterValue": "small"
+  }
+]
