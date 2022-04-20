@@ -1,1 +1,46 @@
-
+[
+  {
+  "ParameterKey": "orgId",
+  "ParameterValue": "$[alfred_ssm_/org/core/OrganizationID]"
+  },
+  {
+  "ParameterKey": "DynamoDBTable",
+  "ParameterValue": "$[alfred_ssm_/org/sharedservice/networking/DynamoDBforVPCCIDR]"
+  },
+  {
+  "ParameterKey": "S3BucketforCode",
+  "ParameterValue": "control-tower-storage-257999423055-us-east-2"
+  },
+  {
+  "ParameterKey": "S3KeyforCode",
+  "ParameterValue": "Networking/ip-populator.zip"
+  },
+  {
+  "ParameterKey": "SmallCIDRRange",
+  "ParameterValue": "10.95.64.0/19"
+  },
+  {
+  "ParameterKey": "MediumCIDRRange",
+  "ParameterValue": "10.95.96.0/19"
+  },
+  {
+  "ParameterKey": "LargeCIDRRange",
+  "ParameterValue": "10.95.0.0/18"
+  },
+  {
+  "ParameterKey": "SmallVPCSubnetMask",
+  "ParameterValue": "26"
+  },
+  {
+  "ParameterKey": "MediumVPCSubnetMask",
+  "ParameterValue": "24"
+  },
+  {
+  "ParameterKey": "LargeVPCSubnetMask",
+  "ParameterValue": "23"
+  },
+  {
+  "ParameterKey": "Environment",
+  "ParameterValue": "dev"
+  }
+]
