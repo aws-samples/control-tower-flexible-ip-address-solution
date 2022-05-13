@@ -78,7 +78,7 @@ Resources:
       IpamScopeId: !Ref IPAMScope
       ProvisionedCidrs: 
         - Cidr: !Select [0, !Ref MainPoolCIDRIPv4List]
-        - Cidr: !Select [1, !Ref MainPoolCIDRIPv4List]
+        # - Cidr: !Select [1, !Ref MainPoolCIDRIPv4List]
         
       Tags:
         - Key: "Name"
@@ -94,7 +94,7 @@ Resources:
       Locale: !Select [0, !Ref OperatingRegionList]
       ProvisionedCidrs: 
         - Cidr: !Select [0, !Ref RegionalPool1CIDRIPv4List]
-        - Cidr: !Select [1, !Ref RegionalPool1CIDRIPv4List]
+        # - Cidr: !Select [1, !Ref RegionalPool1CIDRIPv4List]
       SourceIpamPoolId: !Ref IPAMTOPPoolIPv4  
       Tags:
         - Key: "Name"
@@ -110,7 +110,7 @@ Resources:
       Locale: !Select [1, !Ref OperatingRegionList]
       ProvisionedCidrs: 
         - Cidr: !Select [0, !Ref RegionalPool2CIDRIPv4List]
-        - Cidr: !Select [1, !Ref RegionalPool2CIDRIPv4List]
+        # - Cidr: !Select [1, !Ref RegionalPool2CIDRIPv4List]
       SourceIpamPoolId: !Ref IPAMTOPPoolIPv4  
       Tags:
         - Key: "Name"
