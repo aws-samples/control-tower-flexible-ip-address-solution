@@ -1,0 +1,32 @@
+version: 0.2
+
+env:
+  variables:
+    ENVIRONMENT: lab
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.8
+      ruby: 2.6
+    commands:
+      - pwd
+      - env
+      - make project.setup
+  pre_build:
+    commands:
+      - echo Build started on `date`
+      # - make project.code_quality
+  build:
+    commands:
+      - make project.build
+  post_build:
+    commands:
+      - echo Build completed on `date`
+
+artifacts:
+  base-directory: .build
+  files:
+    - custom-control-tower-configuration/templates/*
+    - custom-control-tower-configuration/parameters/*
+    - manifest.yaml

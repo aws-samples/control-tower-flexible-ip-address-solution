@@ -1,0 +1,38 @@
+[
+  {
+    "ParameterKey": "orgId",
+    "ParameterValue": "$[alfred_ssm_/org/core/OrganizationID]"
+  },
+  {
+    "ParameterKey": "ManagementAccountID",
+    "ParameterValue": "123456789012"
+  },
+  {
+    "ParameterKey": "OperatingRegionList",
+    "ParameterValue": "us-east-1,us-east-2"
+  },
+  {
+    "ParameterKey": "MainPoolCIDRIPv4List",
+    "ParameterValue": "10.0.0.0/8,192.168.0.0/8"
+  },
+  {
+    "ParameterKey": "RegionalPool1CIDRIPv4List",
+    "ParameterValue": "10.0.0.0/16,10.1.0.0/16"
+  },
+  {
+    "ParameterKey": "RegionalPool2CIDRIPv4List",
+    "ParameterValue": "192.168.0.0/16,192.168.1.0/16"
+  },
+  {
+    "ParameterKey": "ProductionPoolCIDRIPv4List",
+    "ParameterValue": "10.1.0.0/16"
+  },
+  {
+    "ParameterKey": "NonProductionPoolCIDRIPv4List",
+    "ParameterValue": "10.0.0.0/16"
+  },
+  {
+    "ParameterKey": "LocalParameterPathforVPCID",
+    "ParameterValue": "/org/member/local/vpcid"
+  }
+]

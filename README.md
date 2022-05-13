@@ -10,13 +10,18 @@ The AWS CodePipeline workflow configures AWS CodePipeline, AWS CodeBuild project
 
 The deployment of this Flexible IPAM solution consists of four steps:
 
-Step 1 - Upload the .zip files to Amazon S3 bucket in the Networking Hub Account.
+Step 1: Create a CodeCommit Repository in the Management Account of the Main Organization.
 
-Step 2 - Make the necessary changes to the Management Account.
+Step 2: Deploy the CodePipeline in the Management Account of the Main Organization
 
-Step 3 - Provision a spoke account, and enroll to the required OU (e.g., Development OU).
+Step 3: Make the necessary changes to the Management Account
 
-Step 4 - Validate the VPC creation in the spoke account.
+Step 4: Provision a spoke account, and enroll to the required OU (e.g., Development OU)
+
+Step 5: Merge with required branch in CodeCommit repository to trigger the Pipeline
+
+Step 6: Validate the VPC creation in the spoke account 
+
 
 ## Authors
 
