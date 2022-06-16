@@ -1,0 +1,448 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+
+  CodeCommitRepositoryName:
+    Description: Name of the CodeCommit repository that contains custom Control Tower configuration. The suffix .git is prohibited.
+    Default: custom-control-tower-configuration
+    Type: String
+    AllowedPattern: ^[\w\.-]+
+
+  CodeCommitBranchName:
+    Description: Name of the branch in CodeCommit repository that contains custom Control Tower configuration.
+    Default: master
+    Type: String
+    # lob-1-ipam-cfct-customization 
+    # lob-2-ipam-cfct-customization
+
+  CustomControlTowerPipelineS3Bucket:
+    Description: Cross-Account Bucket Name containing Custom Control Tower Pipeline Configuration Zip
+    Type: String
+
+  TargetOrg:
+    Description: Control Tower Target Environment
+    Type: String
+    AllowedValues:
+      - main
+      # - lob-1
+      # - lob-2
+
+  CustomControlTowerKMSKeyArn:
+    Description: KmsKeyArn in management account created and used by AWS Custom Pipeline solution
+    Type: String
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Pipeline Configuration
+      Parameters:
+      - PipelineApprovalStage
+      - PipelineApprovalEmail
+    - Label:
+        default: AWS CodeCommit Setup (Applicable if 'AWS CodeCommit' was selected as the CodePipeline Source)
+      Parameters:
+      - CodeCommitRepositoryName
+      - CodeCommitBranchName
+
+    ParameterLabels:
+      CodeCommitRepositoryName:
+        default: CodeCommit Repository Name
+      CodeCommitBranchName:
+        default: CodeCommit Branch Name
+
+Mappings:
+  BucketConfiguration:
+    SourceBucketName:
+      Name: solutions-reference
+  CodePipelineSource:
+    CodeCommit:
+      RepoName: /Customizations-for-aws-control-tower/CodeCommitRepoName
+      BranchName: /Customizations-for-aws-control-tower/CodeCommitBranchName
+  AWSControlTower:
+    ExecutionRole:
+      Name: "AWSControlTowerExecution"
+  LambdaFunction:
+    Logging:
+      Level: 'info'
+  FindReplace:
+    Values:
+      NoneType: 'null'
+      BoolType: 'yes,no,Yes,No,True,False,true,false'  # no spaces are allowed in this string, comma is the only allowed delimiter
+  AutoBuild:
+    CustomControlTower:
+      Flag: 'No'
+  CloudFormationDeploymentOptions:
+    Percentage:
+      MaximumConcurrentAccounts: '100'
+      FailureTolerance: '10'
+
+Resources:
+  CustomControlTowerPipelineArtifactS3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+      LoggingConfiguration:
+        DestinationBucketName: !Ref CustomControlTowerS3AccessLogsBucket
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+
+  CustomControlTowerPipelineArtifactS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CustomControlTowerPipelineArtifactS3Bucket
+      PolicyDocument:
+        Statement:
+          - Sid: DenyDeleteBucket
+            Effect: Deny
+            Principal: "*"
+            Action: s3:DeleteBucket
+            Resource: !Sub arn:${AWS::Partition}:s3:::${CustomControlTowerPipelineArtifactS3Bucket}
+
+  # Create buckets using S3-SSE keys for default encryption
+  CustomControlTowerS3AccessLogsBucket:
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Type: AWS::S3::Bucket
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W35
+            reason: "This S3 bucket is used as the destination for 'CustomControlTowerPipelineS3Bucket' and 'CustomControlTowerPipelineArtifactS3Bucket'"
+    Properties:
+      AccessControl: LogDeliveryWrite
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+
+  CustomControlTowerS3AccessLogsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CustomControlTowerS3AccessLogsBucket
+      PolicyDocument:
+        Statement:
+          - Sid: DenyDeleteBucket
+            Effect: Deny
+            Principal: "*"
+            Action: s3:DeleteBucket
+            Resource: !Sub arn:${AWS::Partition}:s3:::${CustomControlTowerS3AccessLogsBucket}
+
+  CustomControlTowerCodePipelineRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: "The role name is defined to identify Custom Control Tower resources."
+          - id: W11
+            reason: "Allow Resource * for KMS/SSM API. KMS Service only support all resources. Key ID is generated by the service. SSM parameters are customer defined."
+    Properties:
+      RoleName: !Sub CustomControlTowerCodePipelineRole-${TargetOrg}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "codepipeline.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: !Sub Custom-Control-Tower-CodePipeline-Policy-${TargetOrg}
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - s3:GetBucketVersioning
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::${CustomControlTowerPipelineArtifactS3Bucket}
+              - Effect: "Allow"
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObjectAcl
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::${CustomControlTowerPipelineS3Bucket}/*
+                  - !Sub arn:${AWS::Partition}:s3:::${CustomControlTowerPipelineArtifactS3Bucket}/*
+              - Effect: Allow
+                Action:
+                - ssm:PutParameter
+                - ssm:GetParameter
+                - ssm:DeleteParameter
+                - ssm:GetParametersByPath
+                - ssm:DescribeParameters
+                Resource: '*'
+              - Effect: "Allow"
+                Action:
+                  - "codebuild:BatchGetBuilds"
+                  - "codebuild:StartBuild"
+                Resource:
+                  - !Sub arn:${AWS::Partition}:codebuild:${AWS::Region}:${AWS::AccountId}:project/${CustomControlTowerCodeBuild}
+              - Effect: "Allow"
+                Action:
+                  - codecommit:GetBranch
+                  - codecommit:GetCommit
+                  - codecommit:UploadArchive
+                  - codecommit:GetUploadArchiveStatus
+                  - codecommit:CancelUploadArchive
+                Resource: "*"
+              - Effect: "Allow"
+                Action:
+                  - lambda:ListFunctions
+                  - lambda:ListVersionsByFunction
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - kms:DescribeKey
+                  - kms:Encrypt
+                  - kms:Decrypt
+                  - kms:GenerateDataKey
+                  - kms:ReEncryptTo
+                  - kms:ReEncryptFrom
+                Resource: !Ref CustomControlTowerKMSKeyArn
+
+  CustomControlTowerCodePipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub Custom-Control-Tower-CodePipeline-${TargetOrg}
+      RoleArn: !GetAtt CustomControlTowerCodePipelineRole.Arn
+      ArtifactStore:
+        EncryptionKey:
+          Id: !Ref CustomControlTowerKMSKeyArn
+          Type: KMS
+        Location: !Ref CustomControlTowerPipelineArtifactS3Bucket
+        Type: S3
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Version: "1"
+                Provider: CodeCommit
+              OutputArtifacts:
+                - Name: SourceApp
+              Configuration:
+                RepositoryName: !Ref CodeCommitRepositoryName
+                BranchName: !Ref CodeCommitBranchName
+              RunOrder: 1
+        - Name: Build
+          Actions:
+              - Name: CodeBuild
+                InputArtifacts:
+                  - Name: SourceApp
+                ActionTypeId:
+                  Category: Build
+                  Owner: AWS
+                  Version: "1"
+                  Provider: CodeBuild
+                OutputArtifacts:
+                  - Name: BuiltApp
+                Configuration:
+                  ProjectName: !Ref CustomControlTowerCodeBuild
+        - Name: Deploy
+          Actions:
+              - Name: S3-Deploy
+                InputArtifacts:
+                  - Name: BuiltApp
+                ActionTypeId:
+                  Category: Deploy
+                  Owner: AWS
+                  Version: "1"
+                  Provider: S3
+                Configuration:
+                  BucketName: !Ref CustomControlTowerPipelineS3Bucket
+                  Extract: 'false'
+                  ObjectKey: custom-control-tower-configuration.zip
+                  CannedACL: bucket-owner-full-control
+                OutputArtifacts: []
+                RunOrder: 1
+
+  # CustomControlTowerCodePipelineLOB1:
+  #   Type: AWS::CodePipeline::Pipeline
+  #   Properties:
+  #     Name: !Sub Custom-Control-Tower-CodePipeline-${TargetOrg}
+  #     RoleArn: !GetAtt CustomControlTowerCodePipelineRole.Arn
+  #     ArtifactStore:
+  #       EncryptionKey:
+  #         Id: !Ref CustomControlTowerKMSKeyArn
+  #         Type: KMS
+  #       Location: !Ref CustomControlTowerPipelineArtifactS3Bucket
+  #       Type: S3
+  #     Stages:
+  #       - Name: Source
+  #         Actions:
+  #           - Name: Source
+  #             ActionTypeId:
+  #               Category: Source
+  #               Owner: AWS
+  #               Version: "1"
+  #               Provider: CodeCommit
+  #             OutputArtifacts:
+  #               - Name: SourceApp
+  #             Configuration:
+  #               RepositoryName: !Ref CodeCommitRepositoryName
+  #               BranchName: !Ref CodeCommitBranchName
+  #             RunOrder: 1
+  #       - Name: Build
+  #         Actions:
+  #             - Name: CodeBuild
+  #               InputArtifacts:
+  #                 - Name: SourceApp
+  #               ActionTypeId:
+  #                 Category: Build
+  #                 Owner: AWS
+  #                 Version: "1"
+  #                 Provider: CodeBuild
+  #               OutputArtifacts:
+  #                 - Name: BuiltApp
+  #               Configuration:
+  #                 ProjectName: !Ref CustomControlTowerCodeBuild
+  #       - Name: Deploy
+  #         Actions:
+  #             - Name: S3-Deploy
+  #               InputArtifacts:
+  #                 - Name: BuiltApp
+  #               ActionTypeId:
+  #                 Category: Deploy
+  #                 Owner: AWS
+  #                 Version: "1"
+  #                 Provider: S3
+  #               Configuration:
+  #                 BucketName: !Ref CustomControlTowerPipelineS3Bucket #CfCT S3 bucket in LOB1 Organization
+  #                 Extract: 'false'
+  #                 ObjectKey: custom-control-tower-configuration.zip
+  #                 CannedACL: bucket-owner-full-control
+  #               OutputArtifacts: []
+  #               RunOrder: 1
+
+  CustomControlTowerCodeBuildRole:
+    Type: "AWS::IAM::Role"
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: "Allow Resource * for Cloudformation/SSM API: needs to support user defined cfn templates and ssm parameter names."
+    Properties:
+      RoleName: !Sub CustomControlTowerCodeBuildRole-${TargetOrg}
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "codebuild.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: !Sub Custom-Control-Tower-CodeBuild-Policy-${TargetOrg}
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/*
+              - Effect: "Allow"
+                Action:
+                  - s3:PutObject
+                  - s3:GetObjectVersion
+                  - s3:DeleteObject
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::${CustomControlTowerPipelineArtifactS3Bucket}/*
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - cloudformation:ValidateTemplate
+                Resource: "*"
+              - Effect: "Allow"
+                Action:
+                  - s3:GetObject
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::solutions-reference/*
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParametersByPath
+                Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*
+              - Effect: Allow
+                Action:
+                  - ssm:DescribeParameters
+                Resource: '*' # The APIs above only support '*' resource.
+              - Effect: Allow
+                Action:
+                  - kms:DescribeKey
+                  - kms:Encrypt
+                  - kms:Decrypt
+                  - kms:GenerateDataKey
+                  - kms:ReEncryptTo
+                  - kms:ReEncryptFrom
+                Resource: !Ref CustomControlTowerKMSKeyArn
+
+  CustomControlTowerCodeBuild:
+      Type: AWS::CodeBuild::Project
+      Properties:
+          Name: !Sub Custom-Control-Tower-CodeBuild-${TargetOrg}
+          ServiceRole: !GetAtt CustomControlTowerCodeBuildRole.Arn
+          EncryptionKey: !Ref CustomControlTowerKMSKeyArn
+          Source:
+              Type: CODEPIPELINE
+              BuildSpec: .cicd/buildspec.yml
+          Environment:
+              ComputeType: BUILD_GENERAL1_SMALL
+              Image: "aws/codebuild/standard:4.0"
+              Type: LINUX_CONTAINER
+              EnvironmentVariables:
+                  - Name: ARTIFACT_BUCKET
+                    Value: !Ref CustomControlTowerPipelineArtifactS3Bucket
+                  - Name: NONE_TYPE_VALUES
+                    Value: !FindInMap [FindReplace, Values, NoneType]
+                  - Name: BOOL_VALUES
+                    Value: !FindInMap [FindReplace, Values, BoolType]
+                  - Name: STAGE_NAME
+                    Value: "build"
+                  - Name: SM_ARN
+                    Value: "NA"
+                  - Name: LOG_LEVEL
+                    Value: !FindInMap [LambdaFunction, Logging, Level]
+                  - Name: WAIT_TIME
+                    Value: "30"
+                  - Name: KMS_KEY_ALIAS_NAME
+                    Value: !Ref CustomControlTowerKMSKeyArn
+                  - Name: ENVIRONMENT
+                    Value: !Ref TargetOrg
+          Artifacts:
+              Name: !Sub ${CustomControlTowerPipelineArtifactS3Bucket}-Built
+              Type: CODEPIPELINE
+
+
+Outputs:
+  CustomControlTowerCodePipeline:
+    Description: Custom Control Tower CodePipieline
+    Value: !Ref CustomControlTowerCodePipeline

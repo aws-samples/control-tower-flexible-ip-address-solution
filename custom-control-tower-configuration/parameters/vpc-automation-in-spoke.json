@@ -1,0 +1,26 @@
+[
+  {
+    "ParameterKey": "orgId",
+    "ParameterValue": "$[alfred_ssm_/org/core/OrganizationID]"
+  },
+  {
+    "ParameterKey": "LocalParameterPathforVPCID",
+    "ParameterValue": "$[alfred_ssm_/org/sharedservice/networking/LocalVPCIdPath]"
+  },
+  {
+    "ParameterKey": "pIPPoolProductionIPv4",
+    "ParameterValue": "$[alfred_ssm_/org/sharedservice/networking/IPPoolProductionIPv4]"
+  },
+  {
+    "ParameterKey": "pIPPoolNonProductionIPv4",
+    "ParameterValue": "$[alfred_ssm_/org/sharedservice/networking/IPPoolNonProductionIPv4]"
+  },
+  {
+    "ParameterKey": "pEnvironment",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "pVPCSize",
+    "ParameterValue": "small"
+  }
+]

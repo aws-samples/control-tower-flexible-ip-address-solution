@@ -1,0 +1,133 @@
+########################################################################################################################
+#  Any code, applications, scripts, templates, proofs of concept, documentation and other items provided by AWS under  #
+#  this SOW are "AWS Content," as defined in the Agreement, and are provided for illustration purposes only. All such  #
+#  AWS Content is provided solely at the option of AWS, and is subject to the terms of the Addendum and the Agreement. #
+#  Customer is solely responsible for using, deploying, testing, and supporting any code and applications provided by  #
+#  AWS under this SOW.                                                                                                 #
+########################################################################################################################
+# (c) 2019 Amazon Web Services, Inc. or its affiliates. All Rights Reserved. This AWS Content is provided subject to the terms of the AWS Customer
+# Agreement available at https://aws.amazon.com/agreement/ or other written agreement between Customer and Amazon Web Services, Inc.
+AWSTemplateFormatVersion: '2010-09-09'
+Metadata: # Metadata Section
+  AWS::CloudFormation::Interface:
+    ParameterGroups: # Parameter Groups
+    - Label: # Lambda Configuration
+        default: Configuration
+      Parameters: # Label Parameters
+      - pIPPoolProductionIPv4
+      - pEnvironment
+      - pVPCSize
+
+Parameters:
+  orgId:
+    Description: Id of organization
+    Type: String
+  LocalParameterPathforVPCID:
+    Type: String
+    Description: SSM Parameter Name for storing VPCID locally in the account
+    Default: '/org/member/local/vpcid'
+  pEnvironment:
+    Description: Choose an environment for the resource
+    Type: String
+    Default: nonprod
+    AllowedValues:
+      - prod
+      - nonprod
+      - dev
+  pVPCSize: 
+    AllowedValues:
+      - "small"
+      - "medium"
+      - "large"
+    Default: "small"
+    Description: "VPC Size - small, medium or large?"
+    Type: String
+  # pIPPoolNonProductionIPv4:
+  #   Description: IPv4 Non-Production Pool
+  #   Type: String
+  pIPPoolProductionIPv4:
+    Description: IPv4 Production Pool
+    Type: String
+
+Mappings: 
+  size:
+    small:  
+      vpccidr: 28
+      subnetcidr: 6
+    medium:
+      vpccidr: 26
+      subnetcidr: 8
+    large:
+      vpccidr: 25
+      subnetcidr: 9
+
+Resources:
+  # Create a new VPC for the example
+  rVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      Ipv4IpamPoolId: !Ref pIPPoolProductionIPv4
+      Ipv4NetmaskLength: !FindInMap [size, !Ref pVPCSize, vpccidr]
+      EnableDnsSupport:  true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironment
+
+  Subnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref rVpc
+      AvailabilityZone: 
+        Fn::Select: 
+          - 0
+          - Fn::GetAZs: ""
+      CidrBlock: !Select [ 0, !Cidr [ !GetAtt rVPC.CidrBlock, 8, !FindInMap [size, !Ref pVPCSize, subnetcidr]]]
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironment
+
+  Subnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref rVpc
+      AvailabilityZone: 
+        Fn::Select: 
+          - 1
+          - Fn::GetAZs: ""
+      CidrBlock: !Select [ 1, !Cidr [ !GetAtt rVPC.CidrBlock, 8, !FindInMap [size, !Ref pVPCSize, subnetcidr]]]
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironment
+
+  Subnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref rVpc
+      AvailabilityZone: 
+        Fn::Select: 
+          - 0
+          - Fn::GetAZs: ""
+      CidrBlock: !Select [ 2, !Cidr [ !GetAtt rVPC.CidrBlock, 8, !FindInMap [size, !Ref pVPCSize, subnetcidr]]]
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}
+        - Key: environment
+          Value: !Ref pEnvironment 
+
+  rVpcIdSSMParameter:
+    Type: AWS::SSM::Parameter
+    Properties: 
+      Name: !Ref LocalParameterPathforVPCID
+      Type: String
+      Value: !Ref rVpc
+
+Outputs:
+  ovpcid:
+    Value: !Ref rVpc

@@ -1,0 +1,197 @@
+########################################################################################################################
+#  Any code, applications, scripts, templates, proofs of concept, documentation and other items provided by AWS under  #
+#  this SOW are "AWS Content," as defined in the Agreement, and are provided for illustration purposes only. All such  #
+#  AWS Content is provided solely at the option of AWS, and is subject to the terms of the Addendum and the Agreement. #
+#  Customer is solely responsible for using, deploying, testing, and supporting any code and applications provided by  #
+#  AWS under this SOW.                                                                                                 #
+########################################################################################################################
+# Copyright 2016-2017 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# 
+# Licensed under the Apache License, Version 2.0 (the "License"). You may not use this file except in compliance with the License. A copy of the License is located at
+# 
+# http://aws.amazon.com/apache2.0/
+# 
+# or in the "license" file accompanying this file. This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
+
+Parameters:
+  orgId:
+    Description: Id of organization
+    Type: String
+  LocalParameterPathforVPCID:
+    Type: String
+    Description: SSM Parameter Name for storing VPCID locally in the account
+    Default: '/org/member/local/vpcid'
+  ManagementAccountID:
+    Description: Management Account ID
+    Type: String
+  OperatingRegionList: 
+    Description: A list of AWS Regions where the IPAM is allowed to manage IP address CIDRs
+    Type: List<String>     
+  MainPoolCIDRIPv4List:
+    Description: The list of CIDRs provisioned to the main IPAM pool. 
+    Type: List<String>
+  RegionalPool1CIDRIPv4List:
+    Description: The list of CIDRs provisioned to the Production IPAM pool. 
+    Type: List<String> 
+  RegionalPool2CIDRIPv4List:
+    Description: The list of CIDRs provisioned to the Production IPAM pool. 
+    Type: List<String> 
+  ProductionPoolCIDRIPv4List:
+    Description: The list of CIDRs provisioned to the Production IPAM pool. 
+    Type: List<String> 
+  NonProductionPoolCIDRIPv4List:
+    Description: The list of CIDRs provisioned to the Non Production IPAM pool. 
+    Type: List<String>       
+  # DefaultNetmaskLengthIPv4: 
+  #   Description: The default netmask length for allocations
+  #   Type: Number    
+  # MaxNetmaskLengthIPv4: 
+  #   Description: The maximum netmask length possible for CIDR allocations
+  #   Type: Number    
+  # MinNetmaskLengthIPv4: 
+  #   Description: The minimum netmask length required for CIDR allocations
+  #   Type: Number 
+
+Resources:
+  IPAM:
+    Type: AWS::EC2::IPAM
+    Properties: 
+      Description: Organization IPAM
+      OperatingRegions: 
+        - RegionName: !Select [0, !Ref OperatingRegionList]
+        - RegionName: !Select [1, !Ref OperatingRegionList]        
+
+  IPAMScope:
+    DependsOn: IPAM
+    Type: AWS::EC2::IPAMScope
+    Properties: 
+      Description: Custom Scope for Private IP Addresses
+      IpamId: !Ref IPAM
+      IpamScopeType: private
+
+  IPAMTOPPoolIPv4:
+    DependsOn: IPAMScope
+    Type: AWS::EC2::IPAMPool
+    Properties: 
+      AddressFamily: ipv4
+      Description: IPAM Pool for TOP pool 
+      IpamScopeId: !Ref IPAMScope
+      ProvisionedCidrs: 
+        - Cidr: !Select [0, !Ref MainPoolCIDRIPv4List]
+        # - Cidr: !Select [1, !Ref MainPoolCIDRIPv4List]
+        
+      Tags:
+        - Key: "Name"
+          Value: "TOP-LEVEL-POOL" 
+  
+  IPAMPoolRegional1IPv4:
+    DependsOn: IPAMTOPPoolIPv4
+    Type: AWS::EC2::IPAMPool
+    Properties: 
+      AddressFamily: ipv4
+      Description: IPAM Pool for First region 
+      IpamScopeId: !Ref IPAMScope
+      Locale: !Select [0, !Ref OperatingRegionList]
+      ProvisionedCidrs: 
+        - Cidr: !Select [0, !Ref RegionalPool1CIDRIPv4List]
+        # - Cidr: !Select [1, !Ref RegionalPool1CIDRIPv4List]
+      SourceIpamPoolId: !Ref IPAMTOPPoolIPv4  
+      Tags:
+        - Key: "Name"
+          Value: !Select [0, !Ref OperatingRegionList]
+  
+  IPAMPoolRegional2IPv4:
+    DependsOn: IPAMTOPPoolIPv4
+    Type: AWS::EC2::IPAMPool
+    Properties: 
+      AddressFamily: ipv4
+      Description: IPAM Pool for Second region 
+      IpamScopeId: !Ref IPAMScope
+      Locale: !Select [1, !Ref OperatingRegionList]
+      ProvisionedCidrs: 
+        - Cidr: !Select [0, !Ref RegionalPool2CIDRIPv4List]
+        # - Cidr: !Select [1, !Ref RegionalPool2CIDRIPv4List]
+      SourceIpamPoolId: !Ref IPAMTOPPoolIPv4  
+      Tags:
+        - Key: "Name"
+          Value: !Select [1, !Ref OperatingRegionList]
+
+  IPAMPoolProductionIPv4:
+    DependsOn: IPAMPoolRegional1IPv4
+    Type: AWS::EC2::IPAMPool
+    Properties: 
+      AddressFamily: ipv4
+      # AllocationDefaultNetmaskLength: !Ref DefaultNetmaskLengthIPv4
+      # AllocationMaxNetmaskLength: !Ref MaxNetmaskLengthIPv4
+      # AllocationMinNetmaskLength: !Ref MinNetmaskLengthIPv4
+      AutoImport: yes
+      Description: IPAM Pool for Production Environment
+      IpamScopeId: !Ref IPAMScope
+      Locale: !Select [0, !Ref OperatingRegionList]
+      ProvisionedCidrs: 
+        - Cidr: !Select [0, !Ref ProductionPoolCIDRIPv4List]
+      SourceIpamPoolId: !Ref IPAMPoolRegional1IPv4
+      Tags:
+        - Key: "Name"
+          Value: "Production Pool"
+  
+  IPAMPoolNonProductionIPv4:
+    DependsOn: IPAMPoolRegional1IPv4
+    Type: AWS::EC2::IPAMPool
+    Properties: 
+      AddressFamily: ipv4
+      # AllocationDefaultNetmaskLength: !Ref DefaultNetmaskLengthIPv4
+      # AllocationMaxNetmaskLength: !Ref MaxNetmaskLengthIPv4
+      # AllocationMinNetmaskLength: !Ref MinNetmaskLengthIPv4
+      AutoImport: yes
+      Description: IPAM Pool for Non-Production Environment
+      IpamScopeId: !Ref IPAMScope
+      Locale: !Select [0, !Ref OperatingRegionList]
+      ProvisionedCidrs: 
+        - Cidr: !Select [0, !Ref NonProductionPoolCIDRIPv4List]
+      SourceIpamPoolId: !Ref IPAMPoolRegional1IPv4
+      Tags:
+        - Key: "Name"
+          Value: "Non-Production Pool"
+      
+  IPAMShareProductionIPv4:
+    DependsOn: IPAMPoolProductionIPv4
+    Type: "AWS::RAM::ResourceShare"
+    Properties:      
+      Name: "IPAM Share Production"
+      ResourceArns:
+        - !GetAtt IPAMPoolProductionIPv4.Arn
+      Principals:
+        - !Sub arn:aws:organizations::${ManagementAccountID}:organization/${orgId}
+      PermissionArns: 
+        - arn:aws:ram::aws:permission/AWSRAMDefaultPermissionsIpamPool        
+      AllowExternalPrincipals: false
+      Tags:
+        - Key: "Name"
+          Value: "IPv4-Pool-Production"        
+
+  IPAMShareNonProductionIPv4:
+    DependsOn: IPAMPoolNonProductionIPv4
+    Type: "AWS::RAM::ResourceShare"
+    Properties:
+      Name: "IPAM Share Non Production"
+      ResourceArns:
+        -  !GetAtt IPAMPoolNonProductionIPv4.Arn
+      Principals:
+        - !Sub arn:aws:organizations::${ManagementAccountID}:organization/${orgId}
+      PermissionArns: 
+        - arn:aws:ram::aws:permission/AWSRAMDefaultPermissionsIpamPool        
+      AllowExternalPrincipals: false        
+      Tags:
+        - Key: "Name"
+          Value: "IPv4-Pool-Nonproduction"   
+
+Outputs:
+  oLocalParameterPathforVPCID:
+    Value: !Ref LocalParameterPathforVPCID
+  oIPPoolProductionIPv4:
+    Description: IPAM Pool for Production Environments
+    Value: !Ref IPAMPoolProductionIPv4
+  oIPPoolNonProductionIPv4:
+    Description: IPAM Pool for Non Production Environments
+    Value: !Ref IPAMPoolNonProductionIPv4
