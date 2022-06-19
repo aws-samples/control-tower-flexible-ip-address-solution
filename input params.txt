@@ -1,8 +1,8 @@
 MainPoolCIDRIPv4List	            10.0.0.0/8,11.0.0.0/8
-ManagementAccountID	                313867171428
+ManagementAccountID	                123456789012
 NonProductionPoolCIDRIPv4List	    10.0.0.0/16
 OperatingRegionList	                us-east-1,us-west-2
-OrganizationId              	    o-djj856740i
+OrganizationId              	    o-abc123ef
 ProductionPoolCIDRIPv4List	        10.1.0.0/16
 RegionalPool1CIDRIPv4List       	10.0.0.0/16,10.1.0.0/16
 RegionalPool2CIDRIPv4List	        11.0.0.0/16,11.1.0.0/16
