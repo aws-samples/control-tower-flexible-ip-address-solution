@@ -40,7 +40,7 @@ Parameters:
       - "medium"
       - "large"
     Default: "small"
-    Description: "VPC Size - small, medium or large?"
+    Description: "Select the netmask length of the VPC being deployed. VPC Size - small: /24, medium: /22 or large: /20"
     Type: String
   # pIPPoolNonProductionIPv4:
   #   Description: IPv4 Non-Production Pool
@@ -52,14 +52,14 @@ Parameters:
 Mappings: 
   size:
     small:  
-      vpccidr: 28
-      subnetcidr: 6
+      vpccidr: 24
+      subnetcidr: 5
     medium:
-      vpccidr: 26
-      subnetcidr: 8
+      vpccidr: 22
+      subnetcidr: 6
     large:
-      vpccidr: 25
-      subnetcidr: 9
+      vpccidr: 20
+      subnetcidr: 8
 
 Resources:
   # Create a new VPC for the example
